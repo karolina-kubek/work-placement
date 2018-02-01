@@ -11,13 +11,11 @@ struct neighbor {
   /* Counter for the divider */
   uint8_t divider;
   uint16_t last_rssi, last_lqi;
-  /* A number thet keeps on check how many messages were recieved out of 12  */
-  uint8_t reliability_counter;
 };
 static uint8_t sink_addr_0 = 0;
 static uint8_t sink_addr_1 = 0;
 static uint8_t flag = 1;
-/* Dfining the maximum amount of neighbors we can remember. */
+/* Defining the maximum amount of neighbors we can remember. */
 #define MAX_NEIGHBORS 20
 
 /* A memory pool from which we allocate neighbor entries. */
@@ -46,13 +44,12 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
     /* We break out of the loop if the address of the neighbor matches
        the address of the neighbor from which we received this
        broadcast message. */
+       printf("Memory pointer: %p\n", list_head(neighbors_list));
       if(linkaddr_cmp(&n->addr, from)) {  
       /* Compute average */
-        n->last_rssi = (uint16_t)((n->last_rssi * n->divider) + packetbuf_attr(PACKETBUF_ATTR_RSSI) / (n->divider + 1));
-        n->last_lqi = (uint16_t)((n->last_lqi * n->divider) + packetbuf_attr(PACKETBUF_ATTR_LINK_QUALITY) / (n->divider + 1));
+        n->last_rssi = (uint16_t)((n->last_rssi * n->divider) + packetbuf_attr(PACKETBUF_ATTR_RSSI)) / (n->divider + 1);
+        n->last_lqi = (uint16_t)((n->last_lqi * n->divider) + packetbuf_attr(PACKETBUF_ATTR_LINK_QUALITY)) / (n->divider + 1);
         n->divider = n->divider + 1;
-      //n->last_lqi = packetbuf_attr(PACKETBUF_ATTR_LINK_QUALITY);
-        n->reliability_counter = n->reliability_counter + 1;
         break;
       }
     }
@@ -62,7 +59,7 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
    pool. */
     if(n == NULL) {
       n = memb_alloc(&neighbors_memb);
-
+      
     /* If we could not allocate a new neighbor entry, we give up. We
        could have reused an old neighbor entry, but we do not do this
        for now. */
@@ -80,7 +77,6 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
     /* Place the neighbor on the neighbor list. */
       list_add(neighbors_list, n);
     }
-  
     for(n = list_head(neighbors_list); n != NULL; n = list_item_next(n)) {
     
       linkaddr_copy(addr, &n->addr);
@@ -100,7 +96,7 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
       /* Delay 2-4 seconds and rebroadcast*/
       //etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
       //PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));  
-      packetbuf_copyfrom((char *)packetbuf_dataptr(), 14);
+      packetbuf_copyfrom((char *)packetbuf_dataptr(), 13);
       broadcast_send(c);
     }
   }
@@ -109,11 +105,12 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
 static void
 unicast_recv(struct unicast_conn *c, const linkaddr_t *from)
 {
+  struct neighbor *n;
   static linkaddr_t addr;
-  
   printf("Unicast message received from: %d.%d Sending to the sink\n",
          from->u8[0], from->u8[1]);
-  packetbuf_copyfrom(packetbuf_dataptr(), sizeof(packetbuf_dataptr()));
+  packetbuf_copyfrom(packetbuf_dataptr(), sizeof(n)*20);
+  printf("Size of the buffer: %u\n", sizeof(n)*20);
   addr.u8[0] = sink_addr_0;
   addr.u8[1] = sink_addr_1; 
   unicast_send(c, &addr);
@@ -141,7 +138,7 @@ PROCESS_THREAD(broadcast_process, ev, data) {
 
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 
-    packetbuf_copyfrom("Hello", 6);
+    packetbuf_copyfrom("Hello", 5);
     broadcast_send(&broadcast);
     printf("broadcast message sent\n");
   }
@@ -150,8 +147,8 @@ PROCESS_THREAD(broadcast_process, ev, data) {
 }
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(unicast_process, ev, data) {
-
   static struct etimer et;
+  struct neighbor *n;
   PROCESS_EXITHANDLER(unicast_close(&unicast);)
 
   PROCESS_BEGIN();
@@ -170,8 +167,7 @@ PROCESS_THREAD(unicast_process, ev, data) {
       addr.u8[1] = sink_addr_1;
     
       if(!linkaddr_cmp(&addr, &linkaddr_node_addr) && flag == 0) {
-    
-        packetbuf_copyfrom(neighbors_list, sizeof(neighbors_list));
+        packetbuf_copyfrom(list_head(neighbors_list), sizeof(n)*20);
         unicast_send(&unicast, &addr);
         flag = 1;
       }
