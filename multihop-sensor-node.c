@@ -20,10 +20,9 @@ static uint8_t flag = 1;
 
 /* A memory pool from which we allocate neighbor entries. */
 MEMB(neighbors_memb, struct neighbor, MAX_NEIGHBORS);
-
 /* The neighbors_list that holds the neighbors we have seen so far. */
 LIST(neighbors_list);
-/*---------------------------------------------------------------------------*/
+/*-------------------------------------------------------------------------*/
 PROCESS(broadcast_process, "Broadcast");
 PROCESS(unicast_process, "Unicast");
 AUTOSTART_PROCESSES(&broadcast_process, &unicast_process);
@@ -31,10 +30,9 @@ AUTOSTART_PROCESSES(&broadcast_process, &unicast_process);
 static void
 broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
 {
-
+  
   if( strcmp((char *)packetbuf_dataptr(), "Hello") == 0) {
     struct neighbor *n;
-    linkaddr_t *addr;
   
     printf("broadcast message received from %d.%d: '%s'\n",
          from->u8[0], from->u8[1], (char *)packetbuf_dataptr());
@@ -44,7 +42,6 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
     /* We break out of the loop if the address of the neighbor matches
        the address of the neighbor from which we received this
        broadcast message. */
-       printf("Memory pointer: %p\n", list_head(neighbors_list));
       if(linkaddr_cmp(&n->addr, from)) {  
       /* Compute average */
         n->last_rssi = (uint16_t)((n->last_rssi * n->divider) + packetbuf_attr(PACKETBUF_ATTR_RSSI)) / (n->divider + 1);
@@ -76,11 +73,11 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
      
     /* Place the neighbor on the neighbor list. */
       list_add(neighbors_list, n);
+
     }
     for(n = list_head(neighbors_list); n != NULL; n = list_item_next(n)) {
     
-      linkaddr_copy(addr, &n->addr);
-      printf("Record from %d.%d RSSI %u, LQI %u\n", addr->u8[0], addr->u8[1], n->last_rssi, n->last_lqi);
+      printf("Record from %d.%d RSSI %u, LQI %u\n", n->addr.u8[0], n->addr.u8[1], n->last_rssi, n->last_lqi);
     }
   } else if (strcmp((char *)packetbuf_dataptr(), "Please, send!") == 0) {
        
@@ -93,9 +90,7 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
       sink_addr_0 = from->u8[0];
       sink_addr_1 = from->u8[1];
       flag = 0; 
-      /* Delay 2-4 seconds and rebroadcast*/
-      //etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
-      //PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));  
+      
       packetbuf_copyfrom((char *)packetbuf_dataptr(), 13);
       broadcast_send(c);
     }
@@ -110,7 +105,6 @@ unicast_recv(struct unicast_conn *c, const linkaddr_t *from)
   printf("Unicast message received from: %d.%d Sending to the sink\n",
          from->u8[0], from->u8[1]);
   packetbuf_copyfrom(packetbuf_dataptr(), sizeof(n)*20);
-  printf("Size of the buffer: %u\n", sizeof(n)*20);
   addr.u8[0] = sink_addr_0;
   addr.u8[1] = sink_addr_1; 
   unicast_send(c, &addr);
@@ -125,11 +119,17 @@ static struct unicast_conn unicast;
 PROCESS_THREAD(broadcast_process, ev, data) {
 
   static struct etimer et;
-
+  struct neighbor *n;
+  
   PROCESS_EXITHANDLER(broadcast_close(&broadcast);)
 
   PROCESS_BEGIN();
-
+  /* We assign the first position on the neighbor list to be the node itself */
+  n = memb_alloc(&neighbors_memb);
+  n->addr.u8[0] = linkaddr_node_addr.u8[0];
+  n->addr.u8[1] = linkaddr_node_addr.u8[1];
+  list_add(neighbors_list, n);
+  
   broadcast_open(&broadcast, 129, &broadcast_call);
 
   while(1) {
@@ -148,15 +148,16 @@ PROCESS_THREAD(broadcast_process, ev, data) {
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(unicast_process, ev, data) {
   static struct etimer et;
-  struct neighbor *n;
+  
   PROCESS_EXITHANDLER(unicast_close(&unicast);)
 
   PROCESS_BEGIN();
 
   unicast_open(&unicast, 146, &unicast_call);
-  
+  struct neighbor *n;
+   
   while(1){
-    linkaddr_t addr;
+    linkaddr_t addr; 
       /*Etimer set to dely by 5 sec*/
     etimer_set(&et, CLOCK_SECOND * 5);
     
