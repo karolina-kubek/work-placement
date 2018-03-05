@@ -11,6 +11,7 @@ struct neighbor {
   /* Counter for the divider */
   uint8_t divider;
   uint16_t last_rssi, last_lqi;
+  uint8_t last_hello;
 };
 /* Defining the maximum amount of neighbors we can remember. */
 #define MAX_NEIGHBORS 80
@@ -19,11 +20,11 @@ struct neighbor {
 MEMB(neighbors_memb, struct neighbor, MAX_NEIGHBORS);
 
 /* The neighbors_list that holds the neighbors we have seen so far. */
-LIST(neighbors_list1);
+LIST(neighbors_list1); 
 LIST(neighbors_list2);
 LIST(neighbors_list3);
 LIST(neighbors_list4);
-
+LIST(neighbors_list5);
 /*---------------------------------------------------------------------------*/
 PROCESS(broadcast_process, "Broadcast");
 PROCESS(unicast_process, "Unicast");
@@ -40,61 +41,52 @@ unicast_recv(struct unicast_conn *c, const linkaddr_t *from) {
   
   printf("Sink: Table received from: %d.%d\n",
          from->u8[0], from->u8[1]);
-         
+
+   
   /* Assigning the neighbor to the sender node */
   n = packetbuf_dataptr();
-    
-  /* Allocating neighbor table based on sender adress */
+  
+  //Choosing a list to save to , based on the source address
   switch(n->addr.u8[0]) {
-    
     case 1:
-      for(n = n + 1; n->addr.u8[0] != 0; n = n + 1) {
-        s = memb_alloc(&neighbors_memb);
-        s = n;
-        list_add(neighbors_list1, s);
-      }
-      printf("Table 1 filled!");
-      for(n = list_head(neighbors_list1); n != NULL; n = list_item_next(n)){
-        printf("Record from %d.%d RSSI %u, LQI %u\n", n->addr.u8[0], n->addr.u8[1], n->last_rssi, n->last_lqi);
-      }
+      s = list_head(neighbors_list1);
     break;
-    /*---------------------------------------------------------------------------*/
     case 2:
-      for(n = n + 1; n->addr.u8[0] != 0; n = n + 1) {
-        s = memb_alloc(&neighbors_memb);
-        s = n;
-        list_add(neighbors_list2, s);
-      }
-      printf("Table 2 filled!");
-      for(n = list_head(neighbors_list2); n != NULL; n = list_item_next(n)){
-        printf("Record from %d.%d RSSI %u, LQI %u\n", n->addr.u8[0], n->addr.u8[1], n->last_rssi, n->last_lqi);
-      }
+      s = list_head(neighbors_list2);
     break;
-    /*---------------------------------------------------------------------------*/
     case 3:
-      for(n = n + 1; n->addr.u8[0] != 0; n = n + 1) {
-        s = memb_alloc(&neighbors_memb);
-        s = n;
-        list_add(neighbors_list3, s);
-      }
-      printf("Table 3 filled!");
-      for(n = list_head(neighbors_list3); n != NULL; n = list_item_next(n)){
-        printf("Record from %d.%d RSSI %u, LQI %u\n", n->addr.u8[0], n->addr.u8[1], n->last_rssi, n->last_lqi);
-      }
+      s = list_head(neighbors_list3);
     break;
-    /*---------------------------------------------------------------------------*/
     case 4:
-      for(n = n + 1; n->addr.u8[0] != 0; n = n + 1) {
-        s = memb_alloc(&neighbors_memb);
-        s = n;
-        list_add(neighbors_list4, s);
-      }
-      printf("Table 4 filled!");
-      for(n = list_head(neighbors_list4); n != NULL; n = list_item_next(n)){
-        printf("Record from %d.%d RSSI %u, LQI %u\n", n->addr.u8[0], n->addr.u8[1], n->last_rssi, n->last_lqi);
-      }
+      s = list_head(neighbors_list4);
+    break;
+    case 5:
+      s = list_head(neighbors_list5);
     break;
   }
+  
+  // Writing all the received data into the lists
+  for(n = n + 1; n->addr.u8[0] != 0; n = n + 1) {
+    s->addr.u8[0] = n->addr.u8[0];
+    s->addr.u8[1] = n->addr.u8[1];
+    s->divider = n->divider;
+    s->last_rssi = n->last_rssi;
+    s->last_lqi = n->last_lqi;
+    s->last_hello = n->last_hello;
+    printf("Neighbour Address: %d.%d Divider: %u RSSI: %u LQI: %u Hello(time second): %u\n", s->addr.u8[0], s->addr.u8[1], s->divider, s->last_rssi, s->last_lqi, s->last_hello);
+    s = list_item_next(s);
+  }
+  while(s->addr.u8[0] != 0) {
+    s->addr.u8[0] = 0;
+    s->addr.u8[1] = 0;
+    s->divider = 0;
+    s->last_rssi = 0;
+    s->last_lqi = 0;
+    s->last_hello = 0;
+    
+    s = list_item_next(s);
+  }
+  printf("\n");
 }
 /*---------------------------------------------------------------------------*/
 static const struct broadcast_callbacks broadcast_call = {broadcast_recv};
@@ -105,23 +97,37 @@ static struct unicast_conn unicast;
 PROCESS_THREAD(broadcast_process, ev, data) {
 
   static struct etimer et;
-
+  struct neighbor *s;
+  
   PROCESS_EXITHANDLER(broadcast_close(&broadcast);)
 
   PROCESS_BEGIN();
-
+  int i;
+   /*Writing to the memory*/
+  for(i = 0; i < 5; i++) {
+    s = memb_alloc(&neighbors_memb);
+    list_add(neighbors_list1, s);
+    s = memb_alloc(&neighbors_memb);
+    list_add(neighbors_list2, s);
+    s = memb_alloc(&neighbors_memb);
+    list_add(neighbors_list3, s);
+    s = memb_alloc(&neighbors_memb);
+    list_add(neighbors_list4, s);
+    s = memb_alloc(&neighbors_memb);
+    list_add(neighbors_list5, s);
+  }
   broadcast_open(&broadcast, 129, &broadcast_call);
 
   while(1) {
 
-    /* Delay 2-4 seconds */
-    etimer_set(&et, CLOCK_SECOND * 30 + random_rand() % (CLOCK_SECOND * 10));
+    /* Delay 60 - 62seconds */
+    etimer_set(&et, CLOCK_SECOND * 60 + random_rand() % (CLOCK_SECOND * 2));
 
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 
     packetbuf_copyfrom("Please, send!", 13);
     broadcast_send(&broadcast);
-    printf("broadcast message sent\n");
+    printf("broadcast message sent to ask for a table\n");
   }
   
   PROCESS_END();
