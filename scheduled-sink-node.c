@@ -46,8 +46,8 @@ PROCESS_THREAD(PDR_timer, ev, data)
     
     for(n = list_head(neighbors_list); n != NULL; n = list_item_next(n)) {
       printf("Address: %u.%u Packet delivery ratio: %u%\n", n->addr.u8[0], n->addr.u8[1], (unsigned int)(n->received/0.12));
+      n->received = 0;
     }
-    n->received = 0;
   }
   
   PROCESS_END();
