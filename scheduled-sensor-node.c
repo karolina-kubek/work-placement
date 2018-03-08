@@ -60,7 +60,7 @@ static struct unicast_conn uc;
 
 PROCESS_THREAD(example_unicast_process, ev, data)
 {
-  static struct etimer et;
+  static struct etimer et, xt;
   static uint8_t delay;
  
   PROCESS_EXITHANDLER(unicast_close(&uc);)
@@ -71,10 +71,14 @@ PROCESS_THREAD(example_unicast_process, ev, data)
 
   while(1) {
 
-    delay = time_stamp + node_id * 10;
-    etimer_set(&et, CLOCK_SECOND * delay);
-    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et)); // flag =1 ; break; case 1: 
+    etimer_set(&et, CLOCK_SECOND);
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+    
     if(reply_flag != 0) {
+      
+      delay = time_stamp + node_id * 10;
+      etimer_set(&et, CLOCK_SECOND * delay);
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et)); // flag =1 ; break; case 1: 
       
       packetbuf_copyfrom("Hello", 5);
       
