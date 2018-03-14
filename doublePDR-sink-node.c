@@ -8,11 +8,14 @@ struct neighbor {
   linkaddr_t addr;
   uint8_t id;
   uint8_t received;
-  uint8_t sno[3];
+  uint8_t sno1;
+  uint8_t sno2;
+  uint8_t sno3;
+  uint8_t PDR_avg;
+  uint8_t divider;
 };
 
-uint8_t PDR_avg = 100;
-uint8_t divider = 1;
+
 #define MAX_NEIGHBORS 16
 MEMB(neighbors_memb, struct neighbor, MAX_NEIGHBORS);
 LIST(neighbors_list);
@@ -63,23 +66,26 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
     linkaddr_copy(&n->addr, from);
     n->received = 0;
     n->id = neighbour_id;
-    n->sno[0] = 0;
-    n->sno[1] = 0;
-    n->sno[2] = 0;
+    printf("Neighbour id: %u\n", n->id);
+    n->sno1 = 0;
+    n->sno2 = 0;
+    n->sno3 = 0;
+    n->PDR_avg = 100;
+    n->divider = 1;
 
     /* Place the neighbor on the neighbor list. */
     list_add(neighbors_list, n);
   }
   n->received = n->received++;
-  if( n->sno[0] == 0 ) {
-    n->sno[0] = packetbuf_attr(PACKETBUF_ATTR_PACKET_ID);
-    printf("Position 0 occupied: %u!\n", n->sno[0]);
-  } else if( n->sno[1] == 0 ) {
-    n->sno[1] = packetbuf_attr(PACKETBUF_ATTR_PACKET_ID);
-        printf("Position 1 occupied: %u!\n", n->sno[1]);
-  } else if( n->sno[2] == 0 ) {
-    n->sno[2] = packetbuf_attr(PACKETBUF_ATTR_PACKET_ID);
-        printf("Position 2 occupied: %u!\n", n->sno[2]);
+  if( n->sno1 == 0 ) {
+    n->sno1 = packetbuf_attr(PACKETBUF_ATTR_PACKET_ID);
+    printf("Position 0 occupied: %u!\n", n->sno1);
+  } else if( n->sno2 == 0 ) {
+    n->sno2 = packetbuf_attr(PACKETBUF_ATTR_PACKET_ID);
+        printf("Position 1 occupied: %u!\n", n->sno2);
+  } else if( n->sno3 == 0 ) {
+    n->sno3 = packetbuf_attr(PACKETBUF_ATTR_PACKET_ID);
+        printf("Position 2 occupied: %u!\n", n->sno3);
   } else {
     printf("Number out of range!\n");
   }
@@ -116,7 +122,7 @@ PROCESS_THREAD(total_PDR_timer, ev, data)
 PROCESS_THREAD(retransmission_PDR_timer, ev, data)
 {
 
-  struct neighbor *n;
+  static struct neighbor *n;
   static struct etimer et, xt; 
   static uint8_t avg = 0;
   PROCESS_BEGIN();
@@ -129,27 +135,28 @@ PROCESS_THREAD(retransmission_PDR_timer, ev, data)
     for(n = list_head(neighbors_list); n != NULL; n = list_item_next(n)) {
       
       if(n->id == flag) {
-        printf("Id: %u, flag: %u, addr: %u.%u\n", n->id, flag, n->addr.u8[0], n->addr.u8[1]);
         etimer_set(&xt, CLOCK_SECOND * 2);
         PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&xt));
-        printf("First sqno: %u, second: %u, third: %u\n", n->sno[0], n->sno[1], n->sno[2]);
+        printf("First sqno: %u, second: %u, third: %u\n", n->sno1, n->sno2, n->sno3);
         
-        if( (((n->sno[0])+1) == n->sno[1]) || (((n->sno[1])+1) == n->sno[2]) || (((n->sno[0])+2) == n->sno[2]) ){
-          avg = 66;
-          printf("Retransmission avg: 66%\n");
-        } else if( (((n->sno[0])+1) == n->sno[1]) && (((n->sno[1])+1) == n->sno[2]) && (((n->sno[0])+2) == n->sno[2]) ){
+        if( (((n->sno1)+1) == n->sno2) && (((n->sno2)+1) == n->sno3) && (((n->sno1)+2) == n->sno3) ) {
           avg = 100;
           printf("Retransmission avg: 100%\n");
+        } else if( (((n->sno1)+1) == n->sno2) || (((n->sno2)+1) == n->sno3) || (((n->sno1)+2) == n->sno3) ){
+          avg = 66;
+          printf("Retransmission avg: 66%\n");
         } else {
           avg = 33;
           printf("Retransmission avg: 33%\n");
         }
         
-        PDR_avg = (uint8_t)(( (PDR_avg * divider) + avg ) / divider+1);
-        divider = divider + 1;
-        printf("Retransmission PDR: %u Divider: %u Node: %u.%u\n", PDR_avg, divider, n->addr.u8[0], n->addr.u8[1]);
+        n->PDR_avg = (uint8_t)(( (n->PDR_avg * n->divider) + avg ) / (n->divider+1));
+        n->divider = n->divider + 1;
+        printf("Retransmission PDR: %u Divider: %u Node: %u.%u\n", n->PDR_avg, n->divider, n->addr.u8[0], n->addr.u8[1]);
         flag = 0;
-        
+        n->sno1 = 0;
+        n->sno2 = 0;
+        n->sno3 = 0;
         break;
       }
       
