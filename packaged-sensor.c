@@ -2,6 +2,9 @@
 #include "net/rime/rime.h"
 #include "random.h"
 #include <stdio.h>
+#include <string.h>
+#include "cfs/cfs.h"
+#include "cfs/cfs-coffee.h"
 #include "node-id.h"
 
 struct neighbor {
@@ -13,6 +16,8 @@ struct neighbor {
   uint8_t sno3;
   uint8_t PDR_avg;
   uint8_t divider;
+  uint16_t last_rssi, last_lqi;
+  
 };
 
 #define MAX_NEIGHBORS 16
@@ -24,60 +29,7 @@ static uint8_t flag = 0;
 PROCESS(example_broadcast_process, "Broadcast");
 PROCESS(retransmission_PDR_timer, "Retransmission PDR timer");
 AUTOSTART_PROCESSES(&example_broadcast_process, &retransmission_PDR_timer);
-/*---------------------------------------------------------------------------*/
-PROCESS_THREAD(retransmission_PDR_timer, ev, data)
-{
 
-  static struct neighbor *n;
-  static struct etimer et, xt; 
-  static uint8_t avg = 0;
-  PROCESS_BEGIN();
-  
-  while(1) {
-    etimer_set(&et, CLOCK_SECOND);
-
-    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-    for(list_item_next(list_head(neighbors_list)); n != NULL; n = list_item_next(n)) {
-      
-      if(n->id == flag) {
-        printf("ERR! Function works and the flag does! O_o ");
-        etimer_set(&xt, CLOCK_SECOND * 2);
-        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&xt));
-        printf("First sqno: %u, second: %u, third: %u\n", n->sno1, n->sno2, n->sno3);
-        
-        if( ( (((n->sno1)+1) == n->sno2) && (((n->sno2)+1) == n->sno3) && (((n->sno1)+2) == n->sno3) ) || (n->sno1 == 255 && n->sno2 == 1 && n->sno3 == 0) ) {
-          avg = 100;
-          printf("Retransmission avg: 100%\n");
-        } else if( (((n->sno1)+1) == n->sno2) || (((n->sno2)+1) == n->sno3) || (((n->sno1)+2) == n->sno3) ){
-          avg = 66;
-          printf("Retransmission avg: 66%\n");
-        } else {
-          avg = 33;
-          printf("Retransmission avg: 33%\n");
-        }
-        if( n->PDR_avg == 0 ) {
-          n->PDR_avg = avg;
-        } else {
-          n->PDR_avg = (uint8_t)(( (n->PDR_avg * n->divider) + avg ) / (n->divider+1));
-        }
-        n->divider = n->divider + 1;
-        printf("Retransmission PDR: %u Divider: %u Node: %u.%u\n", n->PDR_avg, n->divider, n->addr.u8[0], n->addr.u8[1]);
-        flag = 0;
-        n->sno1 = 0;
-        n->sno2 = 0;
-        n->sno3 = 0;
-        
-        break;
-        
-      } else {
-        printf("ERR! Function works, but flag doesn't!");
-      }
-    }
-    
-  }
-  
-  PROCESS_END();
-}
 /*---------------------------------------------------------------------------*/
 static uint8_t time_stamp = 0;
 static uint8_t reply_flag = 0;
@@ -96,7 +48,6 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
     struct neighbor *n;  
     printf("broadcast message received from %d.%d\n",
 	 from->u8[0], from->u8[1]);
-    printf("The sno: %u\n", packetbuf_attr(PACKETBUF_ATTR_PACKET_ID));
 
     neighbour_id = 1;	 
     for(n = list_head(neighbors_list); n != NULL; n = list_item_next(n)) {
@@ -126,7 +77,6 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
     /* Initialize the fields. */
       linkaddr_copy(&n->addr, from);
       n->id = neighbour_id;
-      printf("Neighbour id: %u\n", n->id);
       n->sno1 = 0;
       n->sno2 = 0;
       n->sno3 = 0;
@@ -137,6 +87,9 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
       list_add(neighbors_list, n);
     } 
     
+    n->last_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
+    n->last_lqi = packetbuf_attr(PACKETBUF_ATTR_LINK_QUALITY);
+  
     if( n->sno1 == 0 ) {
       n->sno1 = packetbuf_attr(PACKETBUF_ATTR_PACKET_ID);
     } else if( n->sno2 == 0 ) {
@@ -146,7 +99,6 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
     } else {
       printf("Number out of range!\n");
     }
-    
     flag = neighbour_id;
   }
 }
@@ -199,3 +151,53 @@ PROCESS_THREAD(example_broadcast_process, ev, data)
   PROCESS_END();
 }
 /*---------------------------------------------------------------------------*/
+PROCESS_THREAD(retransmission_PDR_timer, ev, data)
+{
+
+  static struct neighbor *n;
+  static struct etimer et, xt; 
+  static uint8_t avg = 0;
+  PROCESS_BEGIN();
+  
+  while(1) {
+    etimer_set(&et, CLOCK_SECOND);
+
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+    
+    for(n = list_item_next(list_head(neighbors_list)); n != NULL; n = list_item_next(n)) {
+      if(n->id == flag) {
+        etimer_set(&xt, CLOCK_SECOND * 2);
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&xt));
+        printf("First sqno: %u, second: %u, third: %u\n", n->sno1, n->sno2, n->sno3);
+        
+        if( ( (((n->sno1)+1) == n->sno2) && (((n->sno2)+1) == n->sno3) && (((n->sno1)+2) == n->sno3) ) || (n->sno1 == 255 && n->sno2 == 1 && n->sno3 == 0) ) {
+          avg = 100;
+          printf("Retransmission avg: 100%\n");
+        } else if( (((n->sno1)+1) == n->sno2) || (((n->sno2)+1) == n->sno3) || (((n->sno1)+2) == n->sno3) ){
+          avg = 66;
+          printf("Retransmission avg: 66%\n");
+        } else {
+          avg = 33;
+          printf("Retransmission avg: 33%\n");
+        }
+        if( n->PDR_avg == 0 ) {
+          n->PDR_avg = avg;
+        } else {
+          n->PDR_avg = (uint8_t)(( (n->PDR_avg * n->divider) + avg ) / (n->divider+1));
+        }
+        n->divider = n->divider + 1;
+        printf("Retransmission PDR: %u Divider: %u Node: %u.%u\n", n->PDR_avg, n->divider, n->addr.u8[0], n->addr.u8[1]);
+        flag = 0;
+        n->sno1 = 0;
+        n->sno2 = 0;
+        n->sno3 = 0;
+        
+        break;
+        
+      }
+    }
+    
+  }
+  
+  PROCESS_END();
+}

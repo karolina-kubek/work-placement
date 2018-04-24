@@ -136,7 +136,7 @@ file_test(const char *filename)
 static void
 broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
 {
-  uint8_t neighbour_id;     
+  /*uint8_t neighbour_id;     
   struct neighbor *n;  
   printf("broadcast message received from %d.%d\n",
 	 from->u8[0], from->u8[1]);
@@ -144,29 +144,29 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
   neighbour_id = 1;	 
   for(n = list_head(neighbors_list); n != NULL; n = list_item_next(n)) {
 
-    /* We break out of the loop if the address of the neighbor matches
+     We break out of the loop if the address of the neighbor matches
        the address of the neighbor from which we received this
-       broadcast message. */
+       broadcast message. 
     if(linkaddr_cmp(&n->addr, from)) {
       break;
     }
     neighbour_id++;
   }
 
-  /* If n is NULL, this neighbor was not found in our list, and we
+   If n is NULL, this neighbor was not found in our list, and we
      allocate a new struct neighbor from the neighbors_memb memory
-     pool. */
+     pool. 
   if(n == NULL) {
     n = memb_alloc(&neighbors_memb);
 
     /* If we could not allocate a new neighbor entry, we give up. We
        could have reused an old neighbor entry, but we do not do this
-       for now. */
+       for now. 
     if(n == NULL) {
       return;
     }
 
-    /* Initialize the fields. */
+    /Initialize the fields. 
     linkaddr_copy(&n->addr, from);
     n->id = neighbour_id;
     printf("Neighbour id: %u\n", n->id);
@@ -176,7 +176,7 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
     n->PDR_avg = 0;
     n->divider = 0;
 
-    /* Place the neighbor on the neighbor list. */
+     Place the neighbor on the neighbor list. 
     list_add(neighbors_list, n);
   } else {
     if( n->sno1 == 0 ) {
@@ -190,7 +190,7 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
     }
   }
   flag = neighbour_id;
-  
+  */
 }
 static const struct broadcast_callbacks broadcast_call = {broadcast_recv};
 static struct broadcast_conn broadcast;
