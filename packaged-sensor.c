@@ -33,21 +33,29 @@ AUTOSTART_PROCESSES(&example_broadcast_process, &retransmission_PDR_timer);
 /*---------------------------------------------------------------------------*/
 static uint8_t time_stamp = 0;
 static uint8_t reply_flag = 0;
+static uint8_t table_flag = 0;
 static void
 broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
 {
-  if( *(unsigned int *) packetbuf_dataptr() != 0 && from->u8[0] == 1 ) {
-    printf("broadcast message received from %d.%d: %u\n",
+  // Table forwarding request from sink  
+  if (*(unsigned int *) packetbuf_dataptr() == 1 && from->u8[0] == 1 ) {
+      printf("Request to forward table received from %d.%d: %u\n",
          from->u8[0], from->u8[1], *(unsigned int *) packetbuf_dataptr());
-    printf("sent packet %u\n",
-             packetbuf_attr(PACKETBUF_ATTR_PACKET_ID));    
+    table_flag = 1;
+    
+  // Introduction request from sink + timestamp
+  } else if( *(unsigned int *) packetbuf_dataptr() != 0 && from->u8[0] == 1 ) {
+    printf("Request to intoduce received from %d.%d: %u\n",
+         from->u8[0], from->u8[1], *(unsigned int *) packetbuf_dataptr());  
     time_stamp = *(unsigned int *) packetbuf_dataptr();
     reply_flag = 1;
-  } else if ( *(unsigned int *) packetbuf_dataptr() == 0 ) {
+    
+  // Sensor introduction message
+  } else if ( *(unsigned int *) packetbuf_dataptr() == 0 && from->u8[0] != 1 ) {
     uint8_t neighbour_id;     
     struct neighbor *n;  
-    printf("broadcast message received from %d.%d\n",
-	 from->u8[0], from->u8[1]);
+    printf("Introduction message received from %d.%d: %u\n",
+	 from->u8[0], from->u8[1], *(unsigned int *) packetbuf_dataptr());
 
     neighbour_id = 1;	 
     for(n = list_head(neighbors_list); n != NULL; n = list_item_next(n)) {
@@ -107,7 +115,7 @@ static struct broadcast_conn broadcast;
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(example_broadcast_process, ev, data)
 {
-  static struct etimer et, xt;
+  static struct etimer et, xt, kt;
   struct neighbor *n;
   static uint8_t delay;
   static uint8_t introduction = 0;
@@ -143,6 +151,15 @@ PROCESS_THREAD(example_broadcast_process, ev, data)
       broadcast_send(&broadcast);
       printf("3rd Data broadcasted!\n");
       reply_flag = 0;  
+    } 
+    if ( table_flag != 0 ) {
+      printf("Neighbour table sent by broadcast!\n");
+      etimer_set(&kt, CLOCK_SECOND * delay);
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&kt)); 
+      packetbuf_copyfrom(list_head(neighbors_list), sizeof(*n)*6);
+      broadcast_send(&broadcast);
+      printf("Neighbour table sent by broadcast!\n");
+      table_flag = 0;
     }
     
     etimer_stop(&et);
